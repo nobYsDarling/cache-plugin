@@ -183,7 +183,7 @@ final class CachePlugin implements Plugin
                 return $this->handleCacheListeners($request, $this->createResponseFromCacheItem($cacheItem), true, $cacheItem);
             }
 
-            if ($this->isCacheable($response)) {
+            if ($this->isCacheable($request, $response)) {
                 $bodyStream = $response->getBody();
                 $body = $bodyStream->__toString();
                 if ($bodyStream->isSeekable()) {
@@ -246,14 +246,21 @@ final class CachePlugin implements Plugin
     /**
      * Verify that we can cache this response.
      *
+     * @param RequestInterface $request
      * @param ResponseInterface $response
      *
      * @return bool
      */
-    protected function isCacheable(ResponseInterface $response)
+    protected function isCacheable(RequestInterface $request, ResponseInterface $response)
     {
         if (!in_array($response->getStatusCode(), [200, 203, 300, 301, 302, 404, 410])) {
             return false;
+        }
+
+        foreach ($this->config['blacklisted_paths'] as $not_to_cache_path) {
+            if (1 === preg_match('/'.$not_to_cache_path.'/', $request->getRequestTarget())) {
+                return false;
+            }
         }
 
         $nocacheDirectives = array_intersect($this->config['respect_response_cache_directives'], $this->noCacheFlags);
@@ -353,6 +360,7 @@ final class CachePlugin implements Plugin
             'respect_response_cache_directives' => ['no-cache', 'private', 'max-age', 'no-store'],
             'cache_key_generator' => null,
             'cache_listeners' => [],
+            'blacklisted_paths' => [],  // restricted for
         ]);
 
         $resolver->setAllowedTypes('cache_lifetime', ['int', 'null']);
@@ -360,6 +368,7 @@ final class CachePlugin implements Plugin
         $resolver->setAllowedTypes('respect_cache_headers', ['bool', 'null']);
         $resolver->setAllowedTypes('methods', 'array');
         $resolver->setAllowedTypes('cache_key_generator', ['null', 'Http\Client\Common\Plugin\Cache\Generator\CacheKeyGenerator']);
+        $resolver->setAllowedTypes('blacklisted_paths', 'array');
         $resolver->setAllowedValues('hash_algo', hash_algos());
         $resolver->setAllowedValues('methods', function ($value) {
             /* RFC7230 sections 3.1.1 and 3.2.6 except limited to uppercase characters. */
